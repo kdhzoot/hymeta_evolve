@@ -2,53 +2,52 @@
 
 Date: 2026-06-16 KST
 
-This note summarizes the OpenEvolve experiments run on the HyMeta scheme-selection policy. Sensitive connection material is intentionally omitted.
+이 문서는 HyMeta metadata scheme 선택 정책을 OpenEvolve로 탐색한 실험을
+발표자료로 옮기기 쉽도록 정리한 요약이다. 목표, 실험 설계, 주요 결과,
+정책 해석, 다음 실험 방향을 중심으로 구성했다.
 
-## Goal
+## One-Slide Summary
 
-The goal was to evolve `select_scheme(const SSTStats&)` from a neutral all-Partitioned baseline and discover higher-performing or more diverse policies for choosing among:
+핵심 메시지:
 
-- `SCHEME_FULL`
-- `SCHEME_PARTITIONED`
-- `SCHEME_UNIFY`
+- OpenEvolve로 `select_scheme(const SSTStats&)` 정책을 진화시켜 all-Partitioned baseline 대비 최대 `1.2065x` geomean speedup을 얻었다.
+- 최상위 정책들은 모두 Unify-heavy 성향을 보였지만, 최적 정책은 일부 큰 SST나 filter-heavy SST에 Partitioned를 다시 도입해 pure Unify류 정책보다 좋은 균형을 만들었다.
+- 이득은 cache가 작아질수록 커졌다. `2.0%` cache에서는 약 `1.045x`, `0.1%` cache에서는 약 `1.344x` geomean speedup을 보였다.
+- 현재 다양성 설정은 코드 형태의 다양성은 유지하지만, 실제 정책 행동의 다양성은 충분히 강제하지 못한다.
+- 다음 실험은 `unify_ratio`, `full_ratio`, `transition_rate` 같은 behavior-level feature metric을 MAP-Elites feature dimension으로 넣는 것이 가장 유망하다.
 
-The evaluator score is a geometric mean speedup versus the all-Partitioned baseline. A score of `1.0` means equal to all-Partitioned.
+발표용 한 문장:
 
-## Runtime Setup
+> LLM 기반 program evolution은 HyMeta의 per-SST metadata scheme 선택 문제에서 사람이 정한 단일 규칙보다 더 세밀한 cache/workload-aware 정책을 찾아냈고, 특히 metadata cache pressure가 높은 구간에서 성능 향상을 크게 만들었다.
 
-Model serving used an SSH-forwarded OpenAI-compatible vLLM endpoint:
+## Background
 
-- API base for OpenEvolve/OpenAI SDK: `http://localhost:50000/v1`
-- Model: `glm-5.1`
-- API key value used by SDK: a local placeholder token for the forwarded endpoint
+HyMeta는 SST metadata를 저장하는 방식으로 세 가지 scheme을 고려한다.
 
-Important note: the OpenAI SDK base URL must be `/v1`, not `/v1/models`. Health checks can query `/v1/models`.
+| Scheme | 직관 | 장점 | 단점 |
+| --- | --- | --- | --- |
+| `SCHEME_FULL` | SST metadata를 가장 풍부하게 유지 | cache에 들어맞으면 lookup 비용이 낮음 | metadata footprint가 커서 작은 cache에서 thrashing 위험 |
+| `SCHEME_PARTITIONED` | metadata를 partition 단위로 나눔 | 큰 SST나 filter-heavy 상황에서 cache pressure 완화 | Full보다 접근 비용이 늘 수 있음 |
+| `SCHEME_UNIFY` | 더 압축적이고 통합적인 metadata 표현 | 작은 cache에서 안정적이고 footprint가 낮음 | workload에 따라 Full/Partitioned보다 덜 공격적일 수 있음 |
 
-The GLM endpoint required disabling thinking output in the chat template:
+핵심 문제는 모든 cache size와 workload distribution에서 항상 좋은 단일 scheme이 없다는 점이다. Cache가 넉넉하면 Full이 유리할 수 있고, cache가 매우 작으면 Unify가 유리해진다. 또한 SST level, key count, access count, scan/point lookup 비율, cache hit rate, filter rejection rate에 따라 최적 선택이 바뀔 수 있다.
 
-```yaml
-llm:
-  extra_body:
-    chat_template_kwargs:
-      enable_thinking: false
-```
+따라서 이번 실험은 hand-written threshold를 고정하기보다, OpenEvolve가 C++ 정책 함수를 직접 수정하면서 더 나은 scheme selection rule을 찾게 하는 방식으로 진행했다.
 
-OpenEvolve installed package was patched locally to support `llm.extra_body`:
+## Research Question
 
-- `/home/godong/.local/lib/python3.12/site-packages/openevolve/config.py`
-- `/home/godong/.local/lib/python3.12/site-packages/openevolve/llm/openai.py`
+주요 질문:
 
-## Baseline Correction
+- all-Partitioned baseline에서 시작했을 때 OpenEvolve가 더 높은 성능의 HyMeta policy를 찾을 수 있는가?
+- 반복 run과 높은 exploration 설정이 서로 다른 전략 family를 만들어내는가?
+- 최상위 정책들은 Full, Partitioned, Unify를 어떤 비율과 조건으로 사용하는가?
+- 현재 feature map 설정이 실제 정책 행동의 다양성을 충분히 유도하는가?
 
-Early smoke/debug runs accidentally started from a non-neutral hybrid/P2-like policy. Those runs produced `1.2843` at iteration 0/1 and are invalid for the all-Partitioned baseline comparison.
+## Evolve Target
 
-Invalid or excluded runs:
+OpenEvolve가 바꾸는 코드는 `select_scheme(const SSTStats&)` 함수다. 고정 harness와 simulator는 그대로 두고, scheme 선택 정책만 진화시킨다.
 
-- `20260615_140246_debug_iter1`
-- `20260615_154713_glm_smoke_iter1`
-- `20260615_162848_diverse_glm_iter200`
-
-The corrected initial program is all-Partitioned:
+초기 정책은 all-Partitioned baseline이다.
 
 ```cpp
 Scheme select_scheme(const SSTStats&) {
@@ -56,64 +55,119 @@ Scheme select_scheme(const SSTStats&) {
 }
 ```
 
-The corrected source files were set to all-Partitioned:
+정책이 참조할 수 있는 주요 `SSTStats` 필드는 다음과 같다.
 
-- `/home/godong/hymeta_evolve/initial_program.cpp`
-- `/home/godong/hymeta_evolve/initial_program_diverse.cpp`
+| Field | 의미 | 정책에서 기대되는 활용 |
+| --- | --- | --- |
+| `level` | LSM level | 낮은 level SST를 Full로 승격하거나 높은 level을 Unify/Partitioned로 제한 |
+| `num_keys` | SST key 수 | 큰 SST의 metadata footprint를 제어 |
+| `access_count` | 누적 접근 횟수 | hot SST 감지 |
+| `point_lookup_count` | point lookup 횟수 | lookup-heavy SST 감지 |
+| `scan_count` | scan 횟수 | scan-heavy SST 감지 |
+| `filter_rejection_rate` | filter rejection 비율 | filter-heavy workload에서 Partitioned 선택 가능 |
+| `cache_hit_rate` | metadata cache hit rate | cache-resident SST에 Full 적용 여부 판단 |
+| `full_metadata_size` | Full scheme metadata 크기 | Full 적용 시 cache budget 초과 위험 판단 |
+| `partitioned_num_partitions` | Partitioned partition 수 | Partitioned 적용 가능성/구조 정보 |
+| `unify_num_partitions` | Unify partition 수 | Unify 적용 가능성/구조 정보 |
 
-## Main Config
+## Evaluation Protocol
+
+Fitness는 all-Partitioned baseline 대비 speedup의 geometric mean이다.
+
+```text
+speedup_i = baseline_us_per_op_i / candidate_us_per_op_i
+fitness   = geomean(speedup_i over all scenarios)
+```
+
+해석:
+
+- `1.0`: all-Partitioned와 동일
+- `1.1`: 평균적으로 약 10% 빠름
+- `1.2`: 평균적으로 약 20% 빠름
+- `0.9`: 평균적으로 약 10% 느림
+
+평가 환경:
+
+| Item | Value |
+| --- | --- |
+| Simulator | C++ HyMeta simulator in `harness/` |
+| DB size | `250 GiB` |
+| Operations per scenario | `3,000,000` |
+| Threads | `16` |
+| Found rate | `0.63` |
+| Random seed | `42` |
+| Dynamic reapply interval | `150,000` ops |
+| Reapply count | `20` per scenario |
+| Cache sizes | `2.0%`, `1.0%`, `0.5%`, `0.25%`, `0.1%` of DB size |
+| Workloads | `uniform`, `zipfian`, `mixgraph` |
+| Total scenarios | `15` |
+
+Scenario design:
+
+- `2.0%` cache: metadata가 비교적 잘 들어맞는 쉬운 구간
+- `1.0%` cache: saturation이 시작되는 구간
+- `0.5%` cache: metadata cache pressure가 강한 구간
+- `0.25%` cache: Full-heavy policy가 흔들리기 쉬운 극단 구간
+- `0.1%` cache: 대부분의 SST에 footprint 절감이 중요한 병목 구간
+
+Workload design:
+
+- `uniform`: 뚜렷한 hotspot 없이 넓게 접근하는 workload
+- `zipfian`: hotspot이 강한 skewed workload
+- `mixgraph`: RocksDB 계열 접근 패턴을 반영한 mixed workload
+
+## OpenEvolve Configuration
 
 Primary config:
 
-- `/home/godong/hymeta_evolve/config_diverse_glm.yaml`
+- `config_diverse_glm.yaml`
 
-Important settings:
+LLM 설정:
 
-```yaml
-llm:
-  primary_model: "glm-5.1"
-  temperature: 1.0
-  top_p: 0.95
-  max_tokens: 4096
+| Setting | Value |
+| --- | --- |
+| Model | `glm-5.1` |
+| API style | OpenAI-compatible local endpoint |
+| Temperature | `1.0` |
+| Top-p | `0.95` |
+| Max tokens | `4096` |
 
-prompt:
-  num_top_programs: 2
-  num_diverse_programs: 6
-  include_artifacts: true
-  use_template_stochasticity: true
+Search/database 설정:
 
-database:
-  population_size: 180
-  archive_size: 90
-  num_islands: 6
-  migration_interval: 40
-  migration_rate: 0.05
-  elite_selection_ratio: 0.05
-  exploration_ratio: 0.55
-  exploitation_ratio: 0.30
-  feature_dimensions:
-    - complexity
-    - diversity
-    - score
-```
+| Setting | Value | 의도 |
+| --- | ---: | --- |
+| `population_size` | `180` | 충분한 후보 pool 유지 |
+| `archive_size` | `90` | 좋은 후보와 다양한 후보 저장 |
+| `num_islands` | `6` | 병렬적인 search path 유도 |
+| `migration_interval` | `40` | island 간 교류 주기 |
+| `migration_rate` | `0.05` | migration 강도 |
+| `elite_selection_ratio` | `0.05` | 상위 후보 보존 |
+| `exploration_ratio` | `0.55` | 새로운 정책 탐색 강화 |
+| `exploitation_ratio` | `0.30` | 좋은 후보 주변 개선 |
 
-Current feature dimensions are OpenEvolve built-ins:
+현재 feature dimensions:
 
-- `complexity`: roughly code length
-- `diversity`: code-level diversity
-- `score`: fitness-derived score
+| Dimension | 의미 | 한계 |
+| --- | --- | --- |
+| `complexity` | 대략적인 코드 길이/복잡도 | 실제 scheme 사용 비율과 직접 연결되지 않음 |
+| `diversity` | 코드 형태의 차이 | 행동이 비슷한 코드도 다양하다고 볼 수 있음 |
+| `score` | fitness 기반 점수 | 성능 축은 되지만 정책 구조 축은 아님 |
 
-They do not directly encode policy behavior such as Unify ratio or transition rate.
+발표 포인트:
 
-## Correct Runs
+- 이번 설정은 "좋은 성능을 가진 서로 다른 코드"를 찾는 데는 도움이 됐다.
+- 하지만 "Full-heavy / Partitioned-heavy / Unify-heavy / dynamic policy"처럼 행동이 다른 정책을 균등하게 만들지는 못했다.
+- 그래서 다음 실험에서는 behavior-level feature metric이 필요하다.
 
-These runs started from the all-Partitioned baseline and are valid for comparison.
+## Completed Runs
 
-| Run | Status | Iterations | Best Fitness | Best Iteration | Best Program |
-| --- | --- | ---: | ---: | ---: | --- |
-| `20260615_171311_diverse_glm_partbase_iter200` | completed | 200 | `1.182825086` | 5 | `92f8a430-0c86-46d6-84c2-27c2eae2e68d` |
-| `20260615_182729_diverse_glm_s27182_iter200` | completed | 200 | `1.206468338` | 169 | `08b10079-04e1-48bc-95c4-24f68d79d1f1` |
-| `20260615_202341_diverse_glm_s16180_iter200` | completed | 200 | `1.149079907` | 165 | `c8a12d08-db3b-4e22-a7d1-40e77ce586e0` |
+아래 세 run은 all-Partitioned baseline에서 출발한 200-iteration 실험이다.
+
+| Run | Iterations | Best Fitness | Best Iteration | Program ID | 요약 |
+| --- | ---: | ---: | ---: | --- | --- |
+| `20260615_171311_diverse_glm_partbase_iter200` | 200 | `1.182825086` | 5 | `92f8a430-0c86-46d6-84c2-27c2eae2e68d` | 거의 pure Unify에 가까운 static policy |
+| `20260615_182729_diverse_glm_s27182_iter200` | 200 | `1.206468338` | 169 | `08b10079-04e1-48bc-95c4-24f68d79d1f1` | 최고 성능, Unify 중심 + 선택적 Partitioned/Full |
+| `20260615_202341_diverse_glm_s16180_iter200` | 200 | `1.149079907` | 165 | `c8a12d08-db3b-4e22-a7d1-40e77ce586e0` | dynamic하지만 고 cache zipfian에서 약점 |
 
 Best program files:
 
@@ -121,41 +175,85 @@ Best program files:
 - `experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/best_program.cpp`
 - `experiments/20260615_202341_diverse_glm_s16180_iter200/output/best/best_program.cpp`
 
-Checkpoint files are under each run's `output/checkpoints/checkpoint_200/`.
+## Overall Result
 
-## Strategy Comparison
+가장 좋은 run은 `seed27182`였고, all-Partitioned 대비 `1.206468x` geomean speedup을 달성했다.
 
-All three best policies are Unify-heavy, but they differ in how they use Full and Partitioned.
+| Rank | Run | Geomean Speedup | Relative Note |
+| ---: | --- | ---: | --- |
+| 1 | `seed27182` | `1.206468` | 최고 성능 |
+| 2 | `partbase` | `1.182825` | 단순한 Unify-heavy 정책도 강함 |
+| 3 | `seed16180` | `1.149080` | 낮은 cache에서는 좋지만 특정 구간 regression |
 
-| Run | Fitness | Full Ratio | Partitioned Ratio | Unify Ratio | Transitions | Interpretation |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `partbase` | `1.182825` | `1.285%` | `0.000%` | `98.715%` | `0` | Static level-based policy, almost pure Unify |
-| `seed27182` | `1.206468` | `2.018%` | `14.599%` | `83.383%` | `19748` | Best policy; adaptive hotness/cache/metadata policy |
-| `seed16180` | `1.149080` | `0.000%` | `12.333%` | `87.667%` | `15526` | Workload-adaptive but has a high-cache zipfian regression |
+발표 해석:
 
-### Partbase Best
+- `seed27182`는 단순히 모든 SST를 Unify로 보내지 않고, 일부 상황에서 Partitioned와 Full을 제한적으로 사용했다.
+- `partbase`는 거의 pure Unify에 가까운 단순 정책인데도 강한 baseline 역할을 했다.
+- `seed16180`은 dynamic policy의 가능성을 보여주지만, workload별 안정성이 부족했다.
 
-Policy shape:
+## Workload-Level Results
 
-- `level <= 2`: Full
-- `level <= 4`: Unify
-- otherwise: Partitioned
+Workload별 geomean speedup:
 
-Observed behavior:
+| Run | Uniform | Zipfian | Mixgraph | Interpretation |
+| --- | ---: | ---: | ---: | --- |
+| `partbase` | `1.203558` | `1.230779` | `1.117158` | 모든 workload에서 안정적, mixgraph 이득은 상대적으로 작음 |
+| `seed27182` | `1.233747` | `1.255852` | `1.133400` | 세 workload 모두 최고 |
+| `seed16180` | `1.184217` | `1.162837` | `1.101795` | zipfian 평균이 낮아 전체 fitness 하락 |
 
-- Despite the level rule, evaluated scenarios ended up almost entirely Unify.
-- No scheme transitions.
-- Strong simple baseline: `1.1828`.
+발표 포인트:
 
-### Seed 27182 Best
+- `seed27182`는 uniform, zipfian, mixgraph 모두에서 1등이다.
+- zipfian에서 가장 큰 개선이 나왔다. Hotspot이 있는 상황에서 metadata footprint와 hot SST 처리를 함께 조정한 효과로 볼 수 있다.
+- mixgraph는 세 run 모두 개선 폭이 작다. Mixed workload에서는 지나치게 공격적인 scheme 변경보다 안정적인 footprint 절감이 중요해 보인다.
 
-Policy shape:
+## Cache-Level Results
 
-- Full for low levels, hot/cache-resident SSTs, point-lookup-heavy SSTs with affordable metadata.
-- Partitioned for scan-heavy large SSTs or high filter rejection.
-- Unify for medium-size or warm SSTs.
+Cache size별 geomean speedup:
 
-Key final rules:
+| Cache Size | `partbase` | `seed27182` | `seed16180` | Best |
+| ---: | ---: | ---: | ---: | --- |
+| `2.0%` | `1.054776` | `1.044971` | `0.976506` | `partbase` |
+| `1.0%` | `1.135417` | `1.153732` | `1.110268` | `seed27182` |
+| `0.5%` | `1.189908` | `1.230047` | `1.194003` | `seed27182` |
+| `0.25%` | `1.238744` | `1.282644` | `1.238395` | `seed27182` |
+| `0.1%` | `1.311572` | `1.343826` | `1.249637` | `seed27182` |
+
+발표 포인트:
+
+- 성능 향상은 cache가 작아질수록 커지는 경향이 뚜렷하다.
+- `seed27182`는 `1.0%` 이하 cache pressure 구간에서 일관되게 가장 좋다.
+- `2.0%`에서는 단순 Unify-heavy인 `partbase`가 근소하게 더 좋다. 이는 cache가 넉넉할 때 dynamic threshold가 항상 이득이 되는 것은 아니라는 점을 보여준다.
+- `seed16180`은 `2.0%`에서 `0.9765x`로 baseline보다 느리다. 이 한 구간의 약점이 전체 점수를 낮췄다.
+
+## Scheme Usage
+
+최종 scenario 전체에서의 scheme 사용 비율:
+
+| Run | Full Ratio | Partitioned Ratio | Unify Ratio | Scheme Transitions | Interpretation |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `partbase` | `1.285%` | `0.000%` | `98.715%` | `0` | 사실상 static Unify-heavy |
+| `seed27182` | `2.018%` | `14.599%` | `83.383%` | `19748` | Unify 중심이지만 Partitioned를 의미 있게 사용 |
+| `seed16180` | `0.000%` | `12.333%` | `87.667%` | `15526` | Full 없이 Unify/Partitioned 사이에서 동적으로 이동 |
+
+해석:
+
+- 가장 좋은 정책도 `83%+` Unify를 사용한다. 작은 cache 구간이 평가에 포함되어 있어 footprint 절감이 중요했기 때문이다.
+- `seed27182`의 차별점은 Unify를 기본값으로 두되, `14.6%` 정도의 SST에 Partitioned를 배치한다는 것이다.
+- Full은 전체의 `2.0%` 수준으로 매우 제한적으로 쓰인다. Full은 cache에 들어맞는 hot/small metadata SST에만 쓰는 것이 안전하다는 결론에 가깝다.
+- Transition이 많다는 것은 reapply epoch마다 live stats를 반영해 scheme이 바뀌는 dynamic policy라는 뜻이다.
+
+## Best Policy: Seed 27182
+
+`seed27182`의 정책 형태:
+
+- 낮은 level은 Full 후보로 본다.
+- Hot하고 metadata가 작은 SST는 Full을 허용한다.
+- Scan-heavy 또는 filter rejection이 높은 큰 SST는 Partitioned로 보낸다.
+- 중간 크기 또는 warm SST는 Unify로 보낸다.
+- 나머지는 Partitioned fallback을 둔다.
+
+핵심 규칙:
 
 ```cpp
 if (s.level <= 2) return SCHEME_FULL;
@@ -172,127 +270,135 @@ if (s.unify_num_partitions > 0 && hot > 0.3) return SCHEME_UNIFY;
 return SCHEME_PARTITIONED;
 ```
 
-This was the best overall policy. It improved on the static Unify-heavy solution by reintroducing Partitioned for selected large/filter-heavy cases and Full for a small number of hot/cache-resident cases.
+발표용 해석:
 
-Per-distribution geomean speedups:
+- 이 정책은 "Unify를 기본으로 하되, 모든 SST를 무조건 Unify로 밀어 넣지는 않는다."
+- 큰 scan-heavy SST와 filter-heavy SST는 Partitioned로 보내 cache footprint와 access pattern 사이의 균형을 맞춘다.
+- Full은 hot하고 metadata footprint가 작은 SST에만 제한적으로 사용한다.
+- 즉, OpenEvolve가 찾은 정책은 단일 scheme 선택이 아니라 cache pressure와 workload signal을 결합한 per-SST routing rule이다.
 
-- uniform: `1.233747`
-- zipfian: `1.255852`
-- mixgraph: `1.133400`
+## Policy Family Comparison
 
-### Seed 16180 Best
+### 1. Partbase Best
 
-Policy shape:
+정책 형태:
 
-- Partitioned for very high cache-hit SSTs and high filter rejection with decent cache.
-- Unify for hot, scan-heavy, low-cache, or cold SSTs.
-- Full branch exists but did not materially trigger in final scenarios.
+- `level <= 2`: Full
+- `level <= 4`: Unify
+- otherwise: Partitioned
 
-Weakness:
+실제 관찰:
 
-- `zipfian` at `2.0%` cache had speedup `0.92149`, worse than baseline.
-- This regression pulled down the overall geomean despite good low-cache speedups.
+- 평가 scenario에서는 거의 모든 SST가 Unify로 귀결되었다.
+- Transition이 없어 해석과 운영이 쉽다.
+- `1.1828x`로 강한 단순 baseline이다.
 
-## OpenEvolve Internal Behavior
+발표 포인트:
 
-The `seed27182` run was inspected through:
+- 단순 정책도 작은 cache regime에서는 상당히 강하다.
+- 하지만 `seed27182`처럼 selective Partitioned를 넣으면 추가 개선이 가능하다.
 
-- `output/logs/openevolve_20260615_182729.log`
-- `output/checkpoints/checkpoint_200/metadata.json`
-- `output/checkpoints/checkpoint_200/programs/*.json`
+### 2. Seed 27182 Best
 
-Each program JSON includes:
+정책 형태:
 
-- `id`
-- `code`
-- `parent_id`
-- `generation`
-- `iteration_found`
-- `metrics`
-- `metadata.island`
-- `prompts.diff_user`
+- Unify-heavy dynamic policy
+- 큰 scan-heavy/filter-heavy SST에는 Partitioned
+- hot하고 metadata가 작은 일부 SST에는 Full
 
-The prompt field stores:
+강점:
 
-- `system`
-- `user`
-- `responses`
+- 전체 최고 fitness `1.2065`
+- workload별로 모두 최고
+- `1.0%` 이하 cache에서 가장 안정적으로 강함
 
-For the best program, the stored user prompt was about `41KB` and included current program information, previous attempts, metrics, code, and model response history.
+### 3. Seed 16180 Best
 
-### Island Results for Seed 27182
+정책 형태:
 
-Final island summary from checkpoint 200:
+- Full을 거의 사용하지 않음
+- Unify와 Partitioned 사이에서 dynamic하게 이동
+- 낮은 cache 구간에서는 괜찮지만 high-cache zipfian에서 약점
 
-| Island | Count | Best | Average | Median | Notes |
-| ---: | ---: | ---: | ---: | ---: | --- |
-| 0 | 27 | `1.206468` | `1.123834` | `1.206391` | Winning lineage |
-| 1 | 23 | `1.010738` | `1.007950` | `1.010612` | Near-baseline lineage |
-| 2 | 26 | `1.000003` | `0.996280` | `1.000000` | Mostly stalled |
-| 3 | 26 | `1.168660` | `1.153246` | `1.155544` | Strong secondary lineage |
-| 4 | 26 | `1.152048` | `1.115349` | `1.152048` | Mid-performing lineage |
-| 5 | 21 | `1.152048` | `1.012339` | `0.999802` | Mixed quality |
+약점:
 
-Feature-map cell counts:
+- `zipfian`, `2.0%` cache에서 speedup `0.92149`
+- 이 regression 때문에 전체 geomean이 `1.1491`로 낮아짐
 
-```text
-island 0: 13 cells
-island 1: 13 cells
-island 2: 12 cells
-island 3: 14 cells
-island 4: 7 cells
-island 5: 8 cells
-archive: 90 programs
-```
+발표 포인트:
 
-Island generations:
+- Dynamic policy가 항상 좋은 것은 아니다.
+- 특정 workload/cache 구간에서 나쁜 선택을 하면 geomean 전체가 크게 영향을 받는다.
+- 다음 실험에서는 평균 성능뿐 아니라 worst-case guardrail도 볼 필요가 있다.
 
-```text
-[34, 33, 33, 33, 31, 33]
-```
+## Main Findings
 
-Because `migration_interval` was `40`, no island reached the migration threshold during this 200-iteration run. The experiment therefore behaved mostly like six semi-independent island searches rather than a migration-heavy island model.
+1. OpenEvolve는 all-Partitioned baseline에서 출발해 의미 있는 개선을 찾았다.
 
-### Winning Lineage for Seed 27182
+`seed27182`는 all-Partitioned 대비 `1.2065x` geomean speedup을 달성했다. 이는 metadata scheme 선택이 고정 정책보다 per-SST adaptive rule에서 더 좋아질 수 있음을 보여준다.
 
-Best ancestry:
+2. 최상위 정책은 Unify-heavy로 수렴했다.
 
-```text
-initial all-Partitioned
-  -> iter 7,   fitness 1.017350255
-  -> iter 49,  fitness 1.030632897
-  -> iter 109, fitness 1.206390722
-  -> iter 169, fitness 1.206468338
-```
+세 best policy 모두 Unify 비율이 `83%` 이상이다. 평가가 `0.1%`부터 `2.0%`까지 cache pressure가 큰 구간을 포함하므로, metadata footprint를 줄이는 전략이 전반적으로 유리했다.
 
-The largest improvement occurred at iteration 109, when the policy relaxed the Partitioned thresholds and expanded Unify fallback coverage.
+3. 최고 정책은 pure Unify가 아니라 selective Partitioned/Full을 섞었다.
 
-The final iteration 169 improvement was small but added more aggressive Full rules:
+`seed27182`는 `14.6%` Partitioned와 `2.0%` Full을 사용했다. 이 소량의 non-Unify 선택이 static Unify-heavy policy보다 높은 성능을 만들었다.
 
-- `cache_hit_rate > 0.85 && hot > 0.05 && metadata fits`
-- lower `access_count` Full threshold from `300000` to `150000`
+4. 성능 향상은 cache가 작을수록 커졌다.
 
-## Interpretation
+`seed27182`의 cache별 geomean은 `2.0%`에서 `1.045x`, `0.1%`에서 `1.344x`다. 이는 HyMeta scheme selection의 핵심 가치가 metadata cache pressure 완화에 있음을 보여준다.
 
-The repeated all-Partitioned experiments were useful:
+5. 현재 diversity 설정은 행동 다양성까지 보장하지 않는다.
 
-- The best corrected result improved from `1.1828` to `1.2065`.
-- Different seeds produced meaningfully different policy lineages.
-- However, all top policies still converged toward Unify-heavy behavior.
+`complexity/diversity/score` feature dimension은 코드가 다르게 생긴 후보를 유지하는 데는 도움이 된다. 그러나 실제 scheme ratio나 transition pattern이 다른 정책을 적극적으로 보존하지는 않는다.
 
-The current OpenEvolve diversity settings preserve code-shape diversity more than behavior-level policy diversity. This is because the current feature dimensions are `complexity/diversity/score`, not metrics such as actual scheme ratios.
+## Presentation Figure Ideas
+
+슬라이드에 넣기 좋은 그림:
+
+1. Problem diagram
+   - SST마다 Full, Partitioned, Unify 중 하나를 선택하는 구조
+   - Input signal: level, access count, scan/point lookup, cache hit, metadata size
+
+2. Evaluation matrix
+   - 5 cache sizes x 3 workloads = 15 scenarios
+   - 각 cell에서 speedup을 계산하고 geomean으로 합산
+
+3. Overall result bar chart
+   - `partbase`, `seed27182`, `seed16180`의 geomean speedup
+
+4. Cache sensitivity line chart
+   - x축: cache size
+   - y축: geomean speedup
+   - `seed27182`가 작은 cache에서 더 강해지는 형태 강조
+
+5. Scheme usage stacked bar
+   - Full/Partitioned/Unify ratio 비교
+   - `seed27182`가 Unify-heavy지만 Partitioned를 의미 있게 섞는 점 강조
+
+6. Policy rule summary
+   - Hot + small metadata -> Full
+   - Scan-heavy/filter-heavy large SST -> Partitioned
+   - Small/warm/low-footprint default -> Unify
 
 ## Recommended Next Experiment
 
-Add evaluator-returned behavior features and use them as MAP-Elites dimensions.
+다음 실험의 목표는 "성능 좋은 정책"뿐 아니라 "행동이 다른 정책 family"를 더 많이 확보하는 것이다.
 
-Suggested evaluator metrics:
+### Add Behavior-Level Feature Metrics
+
+Evaluator가 다음 metric을 반환하도록 확장한다.
 
 - `unify_ratio`
 - `full_ratio`
+- `partitioned_ratio`
 - `transition_rate`
+- `worst_scenario_speedup`
+- `low_cache_geomean`
+- `high_cache_geomean`
 
-Suggested config:
+MAP-Elites feature dimension으로는 먼저 세 가지를 추천한다.
 
 ```yaml
 database:
@@ -306,27 +412,91 @@ database:
     transition_rate: 6
 ```
 
-Keep:
+기대 효과:
+
+- pure Unify류 정책만 상위권에 남는 현상을 줄일 수 있다.
+- Full-heavy, Partitioned-heavy, dynamic transition-heavy 정책이 별도 cell에 보존된다.
+- 나중에 발표할 때도 "성능 1등"과 "전략 다양성"을 함께 보여줄 수 있다.
+
+### Keep Fitness Pure
+
+Fitness는 계속 geomean speedup으로 둔다.
 
 ```yaml
 fitness: geomean speedup vs all-Partitioned
 combined_score: same as fitness
 ```
 
-Do not add a diversity bonus into fitness. Keeping fitness pure makes result interpretation cleaner.
+Diversity bonus를 fitness에 직접 더하지 않는 편이 좋다.
 
-Also consider lowering migration interval:
+- 결과 해석이 깔끔하다.
+- `1.20x`라는 숫자가 실제 speedup으로 남는다.
+- 다양성은 MAP-Elites cell selection으로 관리한다.
+
+### Improve Island Mixing
+
+현재 run은 `num_islands: 6`, `migration_interval: 40`이었다. 200-iteration 실험에서는 island 간 교류가 충분히 강하지 않을 수 있다.
+
+추천:
 
 ```yaml
 database:
   migration_interval: 15
+  migration_rate: 0.10
 ```
 
-This would let a 200-iteration, 6-island run actually perform migrations. With the current `migration_interval: 40`, the 200-iteration run did not migrate.
+기대 효과:
+
+- 좋은 rule fragment가 다른 island로 더 빨리 퍼진다.
+- 서로 다른 policy family가 더 자주 recombination될 수 있다.
+- 200-iteration budget에서도 island model의 효과를 더 보기 쉽다.
+
+### Add Guardrail Metrics
+
+`seed16180`처럼 평균은 괜찮지만 특정 scenario에서 baseline보다 느린 정책이 나올 수 있다. 다음 실험에서는 아래 metric을 같이 기록하는 것이 좋다.
+
+- `min_speedup`
+- `num_regressions`
+- `worst_cache_pct`
+- `worst_distribution`
+
+이 metric은 fitness에 바로 넣기보다 artifact/auxiliary metric으로 기록하고, 후보를 분석할 때 사용한다.
+
+## Suggested Slide Outline
+
+1. Motivation
+   - HyMeta metadata scheme 선택은 cache size와 workload에 따라 달라진다.
+
+2. Problem Formulation
+   - Per-SST `select_scheme(SSTStats)`를 진화 대상으로 정의한다.
+
+3. Three Metadata Schemes
+   - Full, Partitioned, Unify의 trade-off 표.
+
+4. OpenEvolve Setup
+   - GLM-5.1, 6 islands, high exploration, 200 iterations.
+
+5. Evaluation Protocol
+   - 15 scenarios, geomean speedup, all-Partitioned baseline.
+
+6. Overall Results
+   - 최고 `1.2065x`, 세 run 비교.
+
+7. Cache Sensitivity
+   - 작은 cache에서 이득이 커지는 line chart.
+
+8. Best Policy Anatomy
+   - `seed27182` rule을 사람이 읽을 수 있는 decision tree로 요약.
+
+9. Diversity Analysis
+   - 현재 feature가 code-level이라 behavior diversity가 부족했다는 해석.
+
+10. Next Steps
+   - behavior metrics, migration 강화, worst-case guardrail.
 
 ## Useful Commands
 
-Summarize all experiments:
+Summarize experiments:
 
 ```bash
 python3 scripts/compare_experiments.py experiments
@@ -337,29 +507,4 @@ Inspect the best program for the winning run:
 ```bash
 sed -n '/EVOLVE-BLOCK-START/,/EVOLVE-BLOCK-END/p' \
   experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/best_program.cpp
-```
-
-Inspect checkpoint metadata:
-
-```bash
-python3 - <<'PY'
-import json
-from pathlib import Path
-p = Path('experiments/20260615_182729_diverse_glm_s27182_iter200/output/checkpoints/checkpoint_200/metadata.json')
-print(json.dumps(json.loads(p.read_text()).keys(), indent=2, default=str))
-PY
-```
-
-Inspect one program's stored prompt:
-
-```bash
-python3 - <<'PY'
-import json
-from pathlib import Path
-pid = '08b10079-04e1-48bc-95c4-24f68d79d1f1'
-p = Path('experiments/20260615_182729_diverse_glm_s27182_iter200/output/checkpoints/checkpoint_200/programs') / f'{pid}.json'
-d = json.loads(p.read_text())
-print(d['prompts']['diff_user'].keys())
-print(d['prompts']['diff_user']['user'][:2000])
-PY
 ```
