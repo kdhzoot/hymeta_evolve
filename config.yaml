@@ -1,0 +1,43 @@
+# OpenEvolve 0.2.27 configuration for HyMeta metadata-scheme policy.
+# Goal: evolve select_scheme() in initial_program.cpp to minimize avg us/op.
+
+max_iterations: 1000
+checkpoint_interval: 100
+log_level: INFO
+random_seed: 42
+language: cpp
+file_suffix: .cpp
+
+# Disable cascade evaluation — evaluator.py implements only `evaluate`,
+# not evaluate_stage1/2/3. With cascade enabled, OpenEvolve warns and
+# falls back to direct evaluate anyway, so set explicitly to silence.
+cascade_evaluation: false
+
+llm:
+  # Local or SSH-forwarded vLLM endpoint serving Qwen3-Coder.
+  api_base: "http://localhost:8001/v1"
+  api_key: "local-vllm"
+  primary_model: "Qwen/Qwen3-Coder-Next"
+  primary_model_weight: 1.0
+  temperature: 0.8
+  max_tokens: 4096
+  timeout: 60
+  retries: 3
+
+prompt:
+  num_top_programs: 3
+  num_diverse_programs: 2
+  include_artifacts: true
+
+database:
+  in_memory: true
+  population_size: 128       # ↑ larger pool for longer run
+  archive_size: 40           # ↑ keep more elite snapshots
+  num_islands: 5             # ↑ more parallel exploration paths
+  elite_selection_ratio: 0.1
+  exploration_ratio: 0.3     # ↑ explore more (was 0.2)
+  exploitation_ratio: 0.6    # ↓ accordingly
+
+# Run with:
+#   OPENAI_API_KEY=... openevolve-run initial_program.cpp evaluator.py \
+#     --config config.yaml --iterations 10 --output evolve_runs

@@ -1,0 +1,6 @@
+run_id,status,iterations_requested,iterations_completed,best_fitness,best_iteration,num_improvements
+20260615_140246_debug_iter1,completed,1,0,1.2843054202233228,0,0
+20260615_154713_glm_smoke_iter1,completed,1,0,1.2843054202233228,0,0
+20260615_182729_diverse_glm_s27182_iter200,completed,200,0,1.2064683384992363,169,0
+20260615_171311_diverse_glm_partbase_iter200,completed,200,0,1.1828250858466849,5,0
+20260615_202341_diverse_glm_s16180_iter200,completed,200,0,1.1490799073725695,165,0

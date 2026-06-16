@@ -1,0 +1,62 @@
+# OpenEvolve config for short, diversity-oriented HyMeta policy search via
+# the local SSH-forwarded vLLM/OpenAI-compatible endpoint.
+
+max_iterations: 250
+checkpoint_interval: 50
+log_level: INFO
+random_seed: 31415
+language: cpp
+file_suffix: .cpp
+
+cascade_evaluation: false
+
+evaluator:
+  cascade_evaluation: false
+
+llm:
+  # Point this at a local or SSH-forwarded OpenAI-compatible endpoint.
+  # OpenAI SDK receives this as base_url and appends /chat/completions.
+  # Health checks hit http://localhost:50000/v1/models.
+  api_base: "http://localhost:50000/v1"
+  api_key: "local-vllm"
+  primary_model: "glm-5.1"
+  primary_model_weight: 1.0
+  temperature: 1.0
+  top_p: 0.95
+  max_tokens: 4096
+  timeout: 60
+  retries: 3
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+
+prompt:
+  num_top_programs: 2
+  num_diverse_programs: 6
+  include_artifacts: true
+  use_template_stochasticity: true
+
+database:
+  in_memory: true
+  log_prompts: true
+  population_size: 180
+  archive_size: 90
+  num_islands: 6
+  migration_interval: 40
+  migration_rate: 0.05
+  elite_selection_ratio: 0.05
+  exploration_ratio: 0.55
+  exploitation_ratio: 0.30
+  feature_dimensions:
+    - complexity
+    - diversity
+    - score
+  feature_bins:
+    complexity: 8
+    diversity: 12
+    score: 8
+  diversity_reference_size: 40
+
+# Suggested run:
+#   ITERATIONS=200 LABEL=diverse_glm CONFIG=config_diverse_glm.yaml \
+#     scripts/evolve_recorded.sh

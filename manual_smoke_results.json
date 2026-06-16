@@ -1,0 +1,284 @@
+[
+  [
+    "L0-L2_Full_L3_Part_else_Unify",
+    {
+      "fitness": -171.28803099999996,
+      "avg_us_per_op": 171.28803099999996,
+      "per_scenario": [
+        {
+          "pct": 5.0,
+          "threads": 1,
+          "effective_us_per_op": 165.193937,
+          "cache_hit_rate": 0.703797
+        },
+        {
+          "pct": 1.0,
+          "threads": 1,
+          "effective_us_per_op": 166.639425,
+          "cache_hit_rate": 0.701138
+        },
+        {
+          "pct": 0.5,
+          "threads": 1,
+          "effective_us_per_op": 182.030731,
+          "cache_hit_rate": 0.672547
+        },
+        {
+          "pct": 5.0,
+          "threads": 16,
+          "effective_us_per_op": 165.193937,
+          "cache_hit_rate": 0.703797
+        },
+        {
+          "pct": 1.0,
+          "threads": 16,
+          "effective_us_per_op": 166.639425,
+          "cache_hit_rate": 0.701138
+        },
+        {
+          "pct": 0.5,
+          "threads": 16,
+          "effective_us_per_op": 182.030731,
+          "cache_hit_rate": 0.672547
+        }
+      ],
+      "build_s": 0.3146798610687256,
+      "runtime_s": 1.5258548259735107
+    }
+  ],
+  [
+    "L0-L2_Full_else_Unify",
+    {
+      "fitness": -179.12971700000003,
+      "avg_us_per_op": 179.12971700000003,
+      "per_scenario": [
+        {
+          "pct": 5.0,
+          "threads": 1,
+          "effective_us_per_op": 171.446539,
+          "cache_hit_rate": 0.693754
+        },
+        {
+          "pct": 1.0,
+          "threads": 1,
+          "effective_us_per_op": 173.57866,
+          "cache_hit_rate": 0.689858
+        },
+        {
+          "pct": 0.5,
+          "threads": 1,
+          "effective_us_per_op": 192.363952,
+          "cache_hit_rate": 0.655528
+        },
+        {
+          "pct": 5.0,
+          "threads": 16,
+          "effective_us_per_op": 171.446539,
+          "cache_hit_rate": 0.693754
+        },
+        {
+          "pct": 1.0,
+          "threads": 16,
+          "effective_us_per_op": 173.57866,
+          "cache_hit_rate": 0.689858
+        },
+        {
+          "pct": 0.5,
+          "threads": 16,
+          "effective_us_per_op": 192.363952,
+          "cache_hit_rate": 0.655528
+        }
+      ],
+      "build_s": 0.31253981590270996,
+      "runtime_s": 1.6262407302856445
+    }
+  ],
+  [
+    "HyMeta_hybrid_seed",
+    {
+      "fitness": -179.12971700000003,
+      "avg_us_per_op": 179.12971700000003,
+      "per_scenario": [
+        {
+          "pct": 5.0,
+          "threads": 1,
+          "effective_us_per_op": 171.446539,
+          "cache_hit_rate": 0.693754
+        },
+        {
+          "pct": 1.0,
+          "threads": 1,
+          "effective_us_per_op": 173.57866,
+          "cache_hit_rate": 0.689858
+        },
+        {
+          "pct": 0.5,
+          "threads": 1,
+          "effective_us_per_op": 192.363952,
+          "cache_hit_rate": 0.655528
+        },
+        {
+          "pct": 5.0,
+          "threads": 16,
+          "effective_us_per_op": 171.446539,
+          "cache_hit_rate": 0.693754
+        },
+        {
+          "pct": 1.0,
+          "threads": 16,
+          "effective_us_per_op": 173.57866,
+          "cache_hit_rate": 0.689858
+        },
+        {
+          "pct": 0.5,
+          "threads": 16,
+          "effective_us_per_op": 192.363952,
+          "cache_hit_rate": 0.655528
+        }
+      ],
+      "build_s": 0.31079864501953125,
+      "runtime_s": 1.620605707168579
+    }
+  ],
+  [
+    "UnifyOnly",
+    {
+      "fitness": -182.68011166666668,
+      "avg_us_per_op": 182.68011166666668,
+      "per_scenario": [
+        {
+          "pct": 5.0,
+          "threads": 1,
+          "effective_us_per_op": 174.985418,
+          "cache_hit_rate": 0.736496
+        },
+        {
+          "pct": 1.0,
+          "threads": 1,
+          "effective_us_per_op": 177.120212,
+          "cache_hit_rate": 0.733191
+        },
+        {
+          "pct": 0.5,
+          "threads": 1,
+          "effective_us_per_op": 195.934705,
+          "cache_hit_rate": 0.704069
+        },
+        {
+          "pct": 5.0,
+          "threads": 16,
+          "effective_us_per_op": 174.985418,
+          "cache_hit_rate": 0.736496
+        },
+        {
+          "pct": 1.0,
+          "threads": 16,
+          "effective_us_per_op": 177.120212,
+          "cache_hit_rate": 0.733191
+        },
+        {
+          "pct": 0.5,
+          "threads": 16,
+          "effective_us_per_op": 195.934705,
+          "cache_hit_rate": 0.704069
+        }
+      ],
+      "build_s": 0.31137800216674805,
+      "runtime_s": 1.7483506202697754
+    }
+  ],
+  [
+    "PartOnly",
+    {
+      "fitness": -202.686376,
+      "avg_us_per_op": 202.686376,
+      "per_scenario": [
+        {
+          "pct": 5.0,
+          "threads": 1,
+          "effective_us_per_op": 187.2369,
+          "cache_hit_rate": 0.752814
+        },
+        {
+          "pct": 1.0,
+          "threads": 1,
+          "effective_us_per_op": 194.442934,
+          "cache_hit_rate": 0.74261
+        },
+        {
+          "pct": 0.5,
+          "threads": 1,
+          "effective_us_per_op": 226.379294,
+          "cache_hit_rate": 0.697464
+        },
+        {
+          "pct": 5.0,
+          "threads": 16,
+          "effective_us_per_op": 187.2369,
+          "cache_hit_rate": 0.752814
+        },
+        {
+          "pct": 1.0,
+          "threads": 16,
+          "effective_us_per_op": 194.442934,
+          "cache_hit_rate": 0.74261
+        },
+        {
+          "pct": 0.5,
+          "threads": 16,
+          "effective_us_per_op": 226.379294,
+          "cache_hit_rate": 0.697464
+        }
+      ],
+      "build_s": 0.31227731704711914,
+      "runtime_s": 1.972607135772705
+    }
+  ],
+  [
+    "FullOnly",
+    {
+      "fitness": -359.2252058333333,
+      "avg_us_per_op": 359.2252058333333,
+      "per_scenario": [
+        {
+          "pct": 5.0,
+          "threads": 1,
+          "effective_us_per_op": 72.776351,
+          "cache_hit_rate": 0.840115
+        },
+        {
+          "pct": 1.0,
+          "threads": 1,
+          "effective_us_per_op": 207.19369,
+          "cache_hit_rate": 0.701426
+        },
+        {
+          "pct": 0.5,
+          "threads": 1,
+          "effective_us_per_op": 377.587282,
+          "cache_hit_rate": 0.543016
+        },
+        {
+          "pct": 5.0,
+          "threads": 16,
+          "effective_us_per_op": 76.899745,
+          "cache_hit_rate": 0.840115
+        },
+        {
+          "pct": 1.0,
+          "threads": 16,
+          "effective_us_per_op": 449.30274,
+          "cache_hit_rate": 0.701426
+        },
+        {
+          "pct": 0.5,
+          "threads": 16,
+          "effective_us_per_op": 971.591427,
+          "cache_hit_rate": 0.543016
+        }
+      ],
+      "build_s": 0.3148376941680908,
+      "runtime_s": 0.6741776466369629
+    }
+  ]
+]

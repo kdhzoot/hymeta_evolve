@@ -1,0 +1,9 @@
+run_id                               status         iter  done    fitness best_it  impr
+----------------------------------------------------------------------------------------
+20260615_140246_debug_iter1          completed         1     0 1.284305420       0     0
+20260615_154713_glm_smoke_iter1      completed         1     0 1.284305420       0     0
+20260615_182729_diverse_glm_s27182_i completed       200     0 1.206468338     169     0
+20260615_171311_diverse_glm_partbase completed       200     0 1.182825086       5     0
+20260615_202341_diverse_glm_s16180_i completed       200     0 1.149079907     165     0
+
+wrote experiments/summary.csv

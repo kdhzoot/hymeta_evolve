@@ -1,0 +1,61 @@
+# Build and generated files
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+__pycache__/
+*.py[cod]
+*.o
+*.a
+*.so
+
+# Logs, transient runtime files, and local errors
+*.log
+*.pid
+/last_build_error.log
+/-
+
+# Large or historical OpenEvolve outputs
+/evolve_runs/
+/evolve_runs_smoke_5iter/
+
+# Keep only the canonical layout needed by evaluator.py.
+/bench_results/*
+!/bench_results/
+!/bench_results/sst_layout.json
+
+# Keep a curated experiment summary and selected best programs only.
+/experiments/*
+!/experiments/
+!/experiments/README.md
+!/experiments/summary.csv
+!/experiments/latest_comparison.txt
+!/experiments/20260616_openevolve_experiment_summary.md
+
+!/experiments/20260615_171311_diverse_glm_partbase_iter200/
+/experiments/20260615_171311_diverse_glm_partbase_iter200/*
+!/experiments/20260615_171311_diverse_glm_partbase_iter200/output/
+/experiments/20260615_171311_diverse_glm_partbase_iter200/output/*
+!/experiments/20260615_171311_diverse_glm_partbase_iter200/output/best/
+/experiments/20260615_171311_diverse_glm_partbase_iter200/output/best/*
+!/experiments/20260615_171311_diverse_glm_partbase_iter200/output/best/best_program.cpp
+!/experiments/20260615_171311_diverse_glm_partbase_iter200/output/best/best_program_info.json
+
+!/experiments/20260615_182729_diverse_glm_s27182_iter200/
+/experiments/20260615_182729_diverse_glm_s27182_iter200/*
+!/experiments/20260615_182729_diverse_glm_s27182_iter200/output/
+/experiments/20260615_182729_diverse_glm_s27182_iter200/output/*
+!/experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/
+/experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/*
+!/experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/best_program.cpp
+!/experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/best_program_info.json
+
+!/experiments/20260615_202341_diverse_glm_s16180_iter200/
+/experiments/20260615_202341_diverse_glm_s16180_iter200/*
+!/experiments/20260615_202341_diverse_glm_s16180_iter200/output/
+/experiments/20260615_202341_diverse_glm_s16180_iter200/output/*
+!/experiments/20260615_202341_diverse_glm_s16180_iter200/output/best/
+/experiments/20260615_202341_diverse_glm_s16180_iter200/output/best/*
+!/experiments/20260615_202341_diverse_glm_s16180_iter200/output/best/best_program.cpp
+!/experiments/20260615_202341_diverse_glm_s16180_iter200/output/best/best_program_info.json
