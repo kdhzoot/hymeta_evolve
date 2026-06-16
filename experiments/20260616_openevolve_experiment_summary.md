@@ -11,6 +11,7 @@ Date: 2026-06-16 KST
 핵심 메시지:
 
 - OpenEvolve로 `select_scheme(const SSTStats&)` 정책을 진화시켜 all-Partitioned baseline 대비 최대 `1.2065x` geomean speedup을 얻었다.
+- 기존 high-score reference 정책도 함께 보존했다. 이 정책은 `1.2852x` geomean speedup을 보였지만, 더 강한 P2-like seed에서 출발했으므로 neutral all-Partitioned 실험과는 별도 reference로 표시한다.
 - 최상위 정책들은 모두 Unify-heavy 성향을 보였지만, 최적 정책은 일부 큰 SST나 filter-heavy SST에 Partitioned를 다시 도입해 pure Unify류 정책보다 좋은 균형을 만들었다.
 - 이득은 cache가 작아질수록 커졌다. `2.0%` cache에서는 약 `1.045x`, `0.1%` cache에서는 약 `1.344x` geomean speedup을 보였다.
 - 현재 다양성 설정은 코드 형태의 다양성은 유지하지만, 실제 정책 행동의 다양성은 충분히 강제하지 못한다.
@@ -159,34 +160,38 @@ Search/database 설정:
 - 하지만 "Full-heavy / Partitioned-heavy / Unify-heavy / dynamic policy"처럼 행동이 다른 정책을 균등하게 만들지는 못했다.
 - 그래서 다음 실험에서는 behavior-level feature metric이 필요하다.
 
-## Completed Runs
+## Included Policy Artifacts
 
-아래 세 run은 all-Partitioned baseline에서 출발한 200-iteration 실험이다.
+발표자료에는 네 개의 policy artifact를 포함한다. 세 개는 all-Partitioned baseline에서 출발한 200-iteration 실험이고, 하나는 기존 high-score reference 정책이다.
 
-| Run | Iterations | Best Fitness | Best Iteration | Program ID | 요약 |
-| --- | ---: | ---: | ---: | --- | --- |
-| `20260615_171311_diverse_glm_partbase_iter200` | 200 | `1.182825086` | 5 | `92f8a430-0c86-46d6-84c2-27c2eae2e68d` | 거의 pure Unify에 가까운 static policy |
-| `20260615_182729_diverse_glm_s27182_iter200` | 200 | `1.206468338` | 169 | `08b10079-04e1-48bc-95c4-24f68d79d1f1` | 최고 성능, Unify 중심 + 선택적 Partitioned/Full |
-| `20260615_202341_diverse_glm_s16180_iter200` | 200 | `1.149079907` | 165 | `c8a12d08-db3b-4e22-a7d1-40e77ce586e0` | dynamic하지만 고 cache zipfian에서 약점 |
+| Policy | Scope | Iterations | Best Fitness | Best Iteration | Program ID | 요약 |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| `legacy12852` | high-score reference | checkpoint 50 | `1.285209293` | 44 | `0d832c19-0aee-4128-b13c-a4eccf3f044a` | P2-like seed 계열, 높은 Full 사용과 Unify fallback |
+| `partbase` | neutral baseline run | 200 | `1.182825086` | 5 | `92f8a430-0c86-46d6-84c2-27c2eae2e68d` | 거의 pure Unify에 가까운 static policy |
+| `seed27182` | neutral baseline run | 200 | `1.206468338` | 169 | `08b10079-04e1-48bc-95c4-24f68d79d1f1` | neutral baseline run 중 최고 성능, Unify 중심 + 선택적 Partitioned/Full |
+| `seed16180` | neutral baseline run | 200 | `1.149079907` | 165 | `c8a12d08-db3b-4e22-a7d1-40e77ce586e0` | dynamic하지만 고 cache zipfian에서 약점 |
 
 Best program files:
 
+- `experiments/20260615_162848_diverse_glm_iter200/output/checkpoints/checkpoint_50/best_program.cpp`
 - `experiments/20260615_171311_diverse_glm_partbase_iter200/output/best/best_program.cpp`
 - `experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/best_program.cpp`
 - `experiments/20260615_202341_diverse_glm_s16180_iter200/output/best/best_program.cpp`
 
 ## Overall Result
 
-가장 좋은 run은 `seed27182`였고, all-Partitioned 대비 `1.206468x` geomean speedup을 달성했다.
+neutral all-Partitioned 시작 조건에서 가장 좋은 run은 `seed27182`였고, all-Partitioned 대비 `1.206468x` geomean speedup을 달성했다.
 
-| Rank | Run | Geomean Speedup | Relative Note |
-| ---: | --- | ---: | --- |
-| 1 | `seed27182` | `1.206468` | 최고 성능 |
-| 2 | `partbase` | `1.182825` | 단순한 Unify-heavy 정책도 강함 |
-| 3 | `seed16180` | `1.149080` | 낮은 cache에서는 좋지만 특정 구간 regression |
+| Rank | Policy | Geomean Speedup | Scope | Relative Note |
+| ---: | --- | ---: | --- | --- |
+| 1 | `legacy12852` | `1.285209` | reference | 기존 high-score 정책, 별도 reference로 표시 |
+| 2 | `seed27182` | `1.206468` | neutral baseline | all-Partitioned 시작 조건의 최고 성능 |
+| 3 | `partbase` | `1.182825` | neutral baseline | 단순한 Unify-heavy 정책도 강함 |
+| 4 | `seed16180` | `1.149080` | neutral baseline | 낮은 cache에서는 좋지만 특정 구간 regression |
 
 발표 해석:
 
+- `legacy12852`는 가장 높은 숫자를 보여주는 reference 정책이다. 발표 그래프에는 넣되, neutral baseline search 결과와 구분해서 표시한다.
 - `seed27182`는 단순히 모든 SST를 Unify로 보내지 않고, 일부 상황에서 Partitioned와 Full을 제한적으로 사용했다.
 - `partbase`는 거의 pure Unify에 가까운 단순 정책인데도 강한 baseline 역할을 했다.
 - `seed16180`은 dynamic policy의 가능성을 보여주지만, workload별 안정성이 부족했다.
@@ -197,13 +202,15 @@ Workload별 geomean speedup:
 
 | Run | Uniform | Zipfian | Mixgraph | Interpretation |
 | --- | ---: | ---: | ---: | --- |
+| `legacy12852` | `1.338894` | `1.330222` | `1.191932` | 가장 높은 reference 성능, Full을 더 적극적으로 사용 |
 | `partbase` | `1.203558` | `1.230779` | `1.117158` | 모든 workload에서 안정적, mixgraph 이득은 상대적으로 작음 |
-| `seed27182` | `1.233747` | `1.255852` | `1.133400` | 세 workload 모두 최고 |
+| `seed27182` | `1.233747` | `1.255852` | `1.133400` | neutral baseline run 중 세 workload 모두 최고 |
 | `seed16180` | `1.184217` | `1.162837` | `1.101795` | zipfian 평균이 낮아 전체 fitness 하락 |
 
 발표 포인트:
 
-- `seed27182`는 uniform, zipfian, mixgraph 모두에서 1등이다.
+- `legacy12852`는 세 workload 모두에서 가장 큰 speedup을 보이지만, 시작 조건이 다르므로 high-score reference로 해석한다.
+- neutral baseline run만 비교하면 `seed27182`는 uniform, zipfian, mixgraph 모두에서 1등이다.
 - zipfian에서 가장 큰 개선이 나왔다. Hotspot이 있는 상황에서 metadata footprint와 hot SST 처리를 함께 조정한 효과로 볼 수 있다.
 - mixgraph는 세 run 모두 개선 폭이 작다. Mixed workload에서는 지나치게 공격적인 scheme 변경보다 안정적인 footprint 절감이 중요해 보인다.
 
@@ -211,18 +218,19 @@ Workload별 geomean speedup:
 
 Cache size별 geomean speedup:
 
-| Cache Size | `partbase` | `seed27182` | `seed16180` | Best |
-| ---: | ---: | ---: | ---: | --- |
-| `2.0%` | `1.054776` | `1.044971` | `0.976506` | `partbase` |
-| `1.0%` | `1.135417` | `1.153732` | `1.110268` | `seed27182` |
-| `0.5%` | `1.189908` | `1.230047` | `1.194003` | `seed27182` |
-| `0.25%` | `1.238744` | `1.282644` | `1.238395` | `seed27182` |
-| `0.1%` | `1.311572` | `1.343826` | `1.249637` | `seed27182` |
+| Cache Size | `legacy12852` | `partbase` | `seed27182` | `seed16180` | Best neutral baseline |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| `2.0%` | `1.113901` | `1.054776` | `1.044971` | `0.976506` | `partbase` |
+| `1.0%` | `1.222499` | `1.135417` | `1.153732` | `1.110268` | `seed27182` |
+| `0.5%` | `1.345700` | `1.189908` | `1.230047` | `1.194003` | `seed27182` |
+| `0.25%` | `1.468069` | `1.238744` | `1.282644` | `1.238395` | `seed27182` |
+| `0.1%` | `1.303406` | `1.311572` | `1.343826` | `1.249637` | `seed27182` |
 
 발표 포인트:
 
 - 성능 향상은 cache가 작아질수록 커지는 경향이 뚜렷하다.
 - `seed27182`는 `1.0%` 이하 cache pressure 구간에서 일관되게 가장 좋다.
+- `legacy12852`는 `0.25%`까지 매우 강하지만, `0.1%` extreme cache에서는 `seed27182`보다 낮다. 더 aggressive한 Full 사용이 극단적인 cache pressure에서는 부담이 될 수 있음을 보여준다.
 - `2.0%`에서는 단순 Unify-heavy인 `partbase`가 근소하게 더 좋다. 이는 cache가 넉넉할 때 dynamic threshold가 항상 이득이 되는 것은 아니라는 점을 보여준다.
 - `seed16180`은 `2.0%`에서 `0.9765x`로 baseline보다 느리다. 이 한 구간의 약점이 전체 점수를 낮췄다.
 
@@ -232,6 +240,7 @@ Cache size별 geomean speedup:
 
 | Run | Full Ratio | Partitioned Ratio | Unify Ratio | Scheme Transitions | Interpretation |
 | --- | ---: | ---: | ---: | ---: | --- |
+| `legacy12852` | `11.259%` | `0.012%` | `88.729%` | `1597` | reference 정책, Full을 가장 적극적으로 사용 |
 | `partbase` | `1.285%` | `0.000%` | `98.715%` | `0` | 사실상 static Unify-heavy |
 | `seed27182` | `2.018%` | `14.599%` | `83.383%` | `19748` | Unify 중심이지만 Partitioned를 의미 있게 사용 |
 | `seed16180` | `0.000%` | `12.333%` | `87.667%` | `15526` | Full 없이 Unify/Partitioned 사이에서 동적으로 이동 |
@@ -239,11 +248,12 @@ Cache size별 geomean speedup:
 해석:
 
 - 가장 좋은 정책도 `83%+` Unify를 사용한다. 작은 cache 구간이 평가에 포함되어 있어 footprint 절감이 중요했기 때문이다.
+- `legacy12852`는 Full 비율이 `11.3%`로 가장 높다. 이 정책은 cache hit가 충분한 shallow/hot SST에 Full을 더 공격적으로 허용한다.
 - `seed27182`의 차별점은 Unify를 기본값으로 두되, `14.6%` 정도의 SST에 Partitioned를 배치한다는 것이다.
 - Full은 전체의 `2.0%` 수준으로 매우 제한적으로 쓰인다. Full은 cache에 들어맞는 hot/small metadata SST에만 쓰는 것이 안전하다는 결론에 가깝다.
 - Transition이 많다는 것은 reapply epoch마다 live stats를 반영해 scheme이 바뀌는 dynamic policy라는 뜻이다.
 
-## Best Policy: Seed 27182
+## Best Neutral-Baseline Policy: Seed 27182
 
 `seed27182`의 정책 형태:
 
@@ -277,9 +287,46 @@ return SCHEME_PARTITIONED;
 - Full은 hot하고 metadata footprint가 작은 SST에만 제한적으로 사용한다.
 - 즉, OpenEvolve가 찾은 정책은 단일 scheme 선택이 아니라 cache pressure와 workload signal을 결합한 per-SST routing rule이다.
 
+## Reference High-Score Policy: Legacy 1.2852
+
+`legacy12852`는 기존 high-score reference로 포함한 네 번째 policy artifact다.
+
+정책 형태:
+
+- cold-start에서 `level <= 3`은 Full, 그보다 깊은 level은 Unify로 시작한다.
+- cache hit rate가 낮거나 깊은 level이면 Unify를 선택해 metadata footprint를 줄인다.
+- cache hit가 충분하고 shallow/hot한 SST에는 Full을 더 적극적으로 허용한다.
+- scan-heavy SST에는 제한적으로 Partitioned를 사용하지만, 실제 최종 비율은 거의 0에 가깝다.
+
+발표용 해석:
+
+- `legacy12852`는 `1.2852x`로 가장 높은 reference score를 보인다.
+- Full ratio가 `11.259%`로 다른 세 policy보다 높다.
+- `0.25%` cache까지 매우 강하지만, `0.1%` cache에서는 `seed27182`보다 낮아진다.
+- 따라서 발표에서는 "강한 prior seed를 사용한 reference upper-bound"로 제시하고, neutral all-Partitioned 시작 실험의 결론과는 구분한다.
+
 ## Policy Family Comparison
 
-### 1. Partbase Best
+### 1. Legacy 1.2852 Reference
+
+정책 형태:
+
+- P2-like cold-start
+- shallow/hot/cache-resident SST에 Full을 적극 적용
+- deep/cold SST는 Unify로 보내 footprint를 낮춤
+
+강점:
+
+- 전체 reference score `1.2852`
+- workload별로 모두 가장 높은 speedup
+- `0.25%` cache에서 `1.4681x` geomean speedup
+
+주의점:
+
+- all-Partitioned neutral baseline에서 출발한 run이 아니므로 별도 reference로 표시해야 한다.
+- `0.1%` cache에서는 `seed27182`가 더 강하다.
+
+### 2. Partbase Best
 
 정책 형태:
 
@@ -298,7 +345,7 @@ return SCHEME_PARTITIONED;
 - 단순 정책도 작은 cache regime에서는 상당히 강하다.
 - 하지만 `seed27182`처럼 selective Partitioned를 넣으면 추가 개선이 가능하다.
 
-### 2. Seed 27182 Best
+### 3. Seed 27182 Best
 
 정책 형태:
 
@@ -308,11 +355,11 @@ return SCHEME_PARTITIONED;
 
 강점:
 
-- 전체 최고 fitness `1.2065`
+- neutral baseline run 중 최고 fitness `1.2065`
 - workload별로 모두 최고
 - `1.0%` 이하 cache에서 가장 안정적으로 강함
 
-### 3. Seed 16180 Best
+### 4. Seed 16180 Best
 
 정책 형태:
 
@@ -337,13 +384,15 @@ return SCHEME_PARTITIONED;
 
 `seed27182`는 all-Partitioned 대비 `1.2065x` geomean speedup을 달성했다. 이는 metadata scheme 선택이 고정 정책보다 per-SST adaptive rule에서 더 좋아질 수 있음을 보여준다.
 
+기존 high-score reference인 `legacy12852`는 `1.2852x`를 보였다. 다만 이 결과는 더 강한 P2-like seed 계열이므로, 발표에서는 neutral baseline search의 직접 비교 대상이 아니라 reference upper-bound로 다룬다.
+
 2. 최상위 정책은 Unify-heavy로 수렴했다.
 
-세 best policy 모두 Unify 비율이 `83%` 이상이다. 평가가 `0.1%`부터 `2.0%`까지 cache pressure가 큰 구간을 포함하므로, metadata footprint를 줄이는 전략이 전반적으로 유리했다.
+네 policy 모두 Unify 비율이 `83%` 이상이다. 평가가 `0.1%`부터 `2.0%`까지 cache pressure가 큰 구간을 포함하므로, metadata footprint를 줄이는 전략이 전반적으로 유리했다.
 
 3. 최고 정책은 pure Unify가 아니라 selective Partitioned/Full을 섞었다.
 
-`seed27182`는 `14.6%` Partitioned와 `2.0%` Full을 사용했다. 이 소량의 non-Unify 선택이 static Unify-heavy policy보다 높은 성능을 만들었다.
+`seed27182`는 `14.6%` Partitioned와 `2.0%` Full을 사용했다. 이 소량의 non-Unify 선택이 static Unify-heavy policy보다 높은 성능을 만들었다. 반면 `legacy12852`는 Full을 `11.3%`까지 더 적극적으로 사용해 높은 reference score를 만들었다.
 
 4. 성능 향상은 cache가 작을수록 커졌다.
 
@@ -366,7 +415,8 @@ return SCHEME_PARTITIONED;
    - 각 cell에서 speedup을 계산하고 geomean으로 합산
 
 3. Overall result bar chart
-   - `partbase`, `seed27182`, `seed16180`의 geomean speedup
+   - `legacy12852`, `partbase`, `seed27182`, `seed16180`의 geomean speedup
+   - `legacy12852`는 reference 색상 또는 hatch로 구분
 
 4. Cache sensitivity line chart
    - x축: cache size
@@ -374,8 +424,9 @@ return SCHEME_PARTITIONED;
    - `seed27182`가 작은 cache에서 더 강해지는 형태 강조
 
 5. Scheme usage stacked bar
-   - Full/Partitioned/Unify ratio 비교
+   - 네 policy의 Full/Partitioned/Unify ratio 비교
    - `seed27182`가 Unify-heavy지만 Partitioned를 의미 있게 섞는 점 강조
+   - `legacy12852`가 Full을 가장 많이 쓰는 reference라는 점 강조
 
 6. Policy rule summary
    - Hot + small metadata -> Full
@@ -480,7 +531,7 @@ database:
    - 15 scenarios, geomean speedup, all-Partitioned baseline.
 
 6. Overall Results
-   - 최고 `1.2065x`, 세 run 비교.
+   - neutral baseline 최고 `1.2065x`, reference `1.2852x`, 네 policy 비교.
 
 7. Cache Sensitivity
    - 작은 cache에서 이득이 커지는 line chart.
