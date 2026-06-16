@@ -15,7 +15,7 @@ Date: 2026-06-16 KST
 - 최상위 정책들은 모두 Unify-heavy 성향을 보였지만, 최적 정책은 일부 큰 SST나 filter-heavy SST에 Partitioned를 다시 도입해 pure Unify류 정책보다 좋은 균형을 만들었다.
 - 이득은 cache가 작아질수록 커졌다. `2.0%` cache에서는 약 `1.045x`, `0.1%` cache에서는 약 `1.344x` geomean speedup을 보였다.
 - 현재 다양성 설정은 코드 형태의 다양성은 유지하지만, 실제 정책 행동의 다양성은 충분히 강제하지 못한다.
-- 다음 실험은 `unify_ratio`, `full_ratio`, `transition_rate` 같은 behavior-level feature metric을 MAP-Elites feature dimension으로 넣는 것이 가장 유망하다.
+- 다음 단계는 simulator policy를 실제 HyMeta/RocksDB에 포팅하고, 기존 level-static 선택 방식과 end-to-end 성능을 비교하는 것이다.
 
 발표용 한 문장:
 
@@ -588,85 +588,131 @@ This makes the evolution direction easy to explain without showing every C++ thr
    - Scan-heavy/filter-heavy large SST -> Partitioned
    - Small/warm/low-footprint default -> Unify
 
-## Recommended Next Experiment
+## Real HyMeta/RocksDB Porting Plan
 
-다음 실험의 목표는 "성능 좋은 정책"뿐 아니라 "행동이 다른 정책 family"를 더 많이 확보하는 것이다.
+다음 단계는 simulator에서 찾은 policy를 실제 HyMeta 기반 RocksDB 코드에 포팅하는 것이다. 발표에서는 이 부분을 "planned real-system validation"으로 두고, 결과는 placeholder로 남긴다.
 
-### Add Behavior-Level Feature Metrics
+핵심 질문:
 
-Evaluator가 다음 metric을 반환하도록 확장한다.
+- Simulator에서 얻은 adaptive policy가 실제 RocksDB에서도 level-static HyMeta보다 빠른가?
+- Per-SST counter와 dynamic scheme selection을 넣었을 때 overhead가 policy 이득보다 작은가?
+- Dynamic policy가 workload/cache 조건별로 어떤 scheme ratio를 만드는가?
 
-- `unify_ratio`
-- `full_ratio`
-- `partitioned_ratio`
-- `transition_rate`
-- `worst_scenario_speedup`
-- `low_cache_geomean`
-- `high_cache_geomean`
+### Implementation Plan
 
-MAP-Elites feature dimension으로는 먼저 세 가지를 추천한다.
+실제 포팅에서 구현할 항목:
 
-```yaml
-database:
-  feature_dimensions:
-    - unify_ratio
-    - full_ratio
-    - transition_rate
-  feature_bins:
-    unify_ratio: 8
-    full_ratio: 8
-    transition_rate: 6
-```
+- Per-SST runtime counter
+  - `access_count`
+  - `point_lookup_count`
+  - `scan_count`
+  - metadata cache hit/miss count
+  - filter check/rejection count
+- `SSTStats` materialization
+  - 기존 table/SST metadata에서 static fields 수집
+  - runtime counter에서 dynamic fields 수집
+  - `select_scheme(SSTStats)` 호출에 필요한 compact struct 구성
+- Metadata scheme selection hook
+  - 기존 `himeta_level_preference` 기반 level-static decision path와 분리
+  - `seed27182`와 `legacy12852` policy를 실제 C++ decision code로 포팅
+  - scheme 변경 시 metadata cache key, reload, invalidation semantics 확인
+- Reapply mechanism
+  - 일정 interval마다 SST별 stats를 읽고 scheme 재결정
+  - transition count와 per-level scheme distribution 기록
+  - 너무 잦은 scheme flip을 막기 위한 optional hysteresis 검토
+- Observability
+  - final Full/Partitioned/Unify ratio
+  - transition count
+  - metadata cache hit rate
+  - per-level scheme distribution
+  - per-workload throughput and latency
 
-기대 효과:
+### Four-Way Comparison
 
-- pure Unify류 정책만 상위권에 남는 현상을 줄일 수 있다.
-- Full-heavy, Partitioned-heavy, dynamic transition-heavy 정책이 별도 cell에 보존된다.
-- 나중에 발표할 때도 "성능 1등"과 "전략 다양성"을 함께 보여줄 수 있다.
+본문 실험 비교군은 네 개로 제한한다.
 
-### Keep Fitness Pure
+| Group | Role | Notes |
+| --- | --- | --- |
+| `level-static` | existing HyMeta baseline | 기존 `himeta_level_preference` 방식. P2/P5 중 prior real-run best 또는 default를 대표값으로 사용 |
+| `all-Partitioned` | neutral baseline | simulator fitness 기준과 연결되는 baseline |
+| `seed27182` | evolved neutral-baseline policy | all-Partitioned에서 출발한 OpenEvolve best |
+| `legacy12852` | high-score reference policy | P2-like seed 계열의 reference upper-bound |
 
-Fitness는 계속 geomean speedup으로 둔다.
+Result placeholder:
 
-```yaml
-fitness: geomean speedup vs all-Partitioned
-combined_score: same as fitness
-```
+| Workload | Cache | `level-static` | `all-Partitioned` | `seed27182` | `legacy12852` | Winner |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| uniform | `TBD` | TBD | TBD | TBD | TBD | TBD |
+| zipfian | `TBD` | TBD | TBD | TBD | TBD | TBD |
+| mixgraph/trace | `TBD` | TBD | TBD | TBD | TBD | TBD |
 
-Diversity bonus를 fitness에 직접 더하지 않는 편이 좋다.
+### Real-System Experiment Design
 
-- 결과 해석이 깔끔하다.
-- `1.20x`라는 숫자가 실제 speedup으로 남는다.
-- 다양성은 MAP-Elites cell selection으로 관리한다.
+Recommended workloads:
 
-### Improve Island Mixing
+- `uniform`: broad access pattern, weak hotspot
+- `zipfian`: hot SST behavior and skewed lookup pressure
+- `mixgraph` or real trace: mixed point/scan workload
 
-현재 run은 `num_islands: 6`, `migration_interval: 40`이었다. 200-iteration 실험에서는 island 간 교류가 충분히 강하지 않을 수 있다.
+Recommended cache budgets:
 
-추천:
+- `2.0%`: high-cache regime
+- `1.0%`: saturation starts
+- `0.5%`: strong metadata cache pressure
+- `0.25%`: extreme pressure
+- `0.1%`: optional stress case if runtime cost is acceptable
 
-```yaml
-database:
-  migration_interval: 15
-  migration_rate: 0.10
-```
+Primary metrics:
 
-기대 효과:
+- throughput or `us/op`
+- p50 / p95 / p99 latency
+- metadata cache hit rate
+- block cache hit rate
+- metadata memory footprint
+- Full / Partitioned / Unify ratio
+- scheme transition count
 
-- 좋은 rule fragment가 다른 island로 더 빨리 퍼진다.
-- 서로 다른 policy family가 더 자주 recombination될 수 있다.
-- 200-iteration budget에서도 island model의 효과를 더 보기 쉽다.
+Interpretation placeholder:
 
-### Add Guardrail Metrics
+- [To be filled] Does `seed27182` preserve simulator gains in real RocksDB?
+- [To be filled] Does `legacy12852` remain better except under extreme cache pressure?
+- [To be filled] Is dynamic policy stable, or does transition overhead dominate?
+- [To be filled] Which cache/workload region benefits most from adaptive scheme selection?
 
-`seed16180`처럼 평균은 괜찮지만 특정 scenario에서 baseline보다 느린 정책이 나올 수 있다. 다음 실험에서는 아래 metric을 같이 기록하는 것이 좋다.
+### SSTStats Overhead Experiment
 
-- `min_speedup`
-- `num_regressions`
-- `worst_cache_pct`
-- `worst_distribution`
+별도 실험으로 `SSTStats` counter 유지 비용을 측정한다. 이 실험은 policy 성능과 instrumentation overhead를 분리하기 위한 것이다.
 
-이 metric은 fitness에 바로 넣기보다 artifact/auxiliary metric으로 기록하고, 후보를 분석할 때 사용한다.
+Experiment idea:
+
+- `level-static`: 기존 방식 그대로
+- `level-static + SSTStats counters`: counter만 업데이트하고 scheme은 기존 level-static 유지
+- `level-static + SSTStats counters + logging`: counter와 periodic logging까지 켠 상태
+- `adaptive policy`: counter와 dynamic scheme selection을 모두 켠 상태
+
+Overhead metrics:
+
+- throughput drop versus plain `level-static`
+- p50 / p95 / p99 latency increase
+- CPU utilization
+- counter update cost per operation
+- memory overhead per SST
+- contention indicators for atomic counters or locks
+
+Placeholder result table:
+
+| Variant | Throughput | p99 Latency | CPU | Memory/SST | Overhead vs level-static |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `level-static` | TBD | TBD | TBD | TBD | baseline |
+| `+ counters` | TBD | TBD | TBD | TBD | TBD |
+| `+ counters + logging` | TBD | TBD | TBD | TBD | TBD |
+| `adaptive policy` | TBD | TBD | TBD | TBD | TBD |
+
+Expected conclusion placeholder:
+
+- [To be filled] If counter-only overhead is small, adaptive policy can be evaluated fairly.
+- [To be filled] If counter overhead is large, use sampling, relaxed atomics, per-thread aggregation, or epoch-level batching.
+- [To be filled] If logging overhead is large, keep detailed scheme logs only in profiling builds.
 
 ## Suggested Slide Outline
 
@@ -697,8 +743,14 @@ database:
 9. Diversity Analysis
    - 현재 feature가 code-level이라 behavior diversity가 부족했다는 해석.
 
-10. Next Steps
-   - behavior metrics, migration 강화, worst-case guardrail.
+10. Real RocksDB Porting
+   - Per-SST counters, `SSTStats`, and `select_scheme(SSTStats)` decision hook.
+
+11. Real-System Experiment Placeholder
+   - Four-way comparison: `level-static`, `all-Partitioned`, `seed27182`, `legacy12852`.
+
+12. SSTStats Overhead Placeholder
+   - Counter-only overhead, counter+logging overhead, and adaptive-policy overhead.
 
 ## Useful Commands
 
