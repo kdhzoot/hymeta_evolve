@@ -305,6 +305,161 @@ return SCHEME_PARTITIONED;
 - `0.25%` cache까지 매우 강하지만, `0.1%` cache에서는 `seed27182`보다 낮아진다.
 - 따라서 발표에서는 "강한 prior seed를 사용한 reference upper-bound"로 제시하고, neutral all-Partitioned 시작 실험의 결론과는 구분한다.
 
+## Case Study: Seed 27182 Evolution Path
+
+`seed27182`는 neutral all-Partitioned baseline에서 시작한 run 중 가장 좋은 결과를 낸 케이스다. 이 run의 checkpoint에는 program JSON이 남아 있어서 parent chain, prompt, LLM response, metric 변화를 따라가며 진화 방향을 복원할 수 있다.
+
+분석 대상:
+
+- Run: `20260615_182729_diverse_glm_s27182_iter200`
+- Best artifact: `experiments/20260615_182729_diverse_glm_s27182_iter200/output/best/best_program.cpp`
+- Best program id: `08b10079-04e1-48bc-95c4-24f68d79d1f1`
+- Checkpoint source: `output/checkpoints/checkpoint_200/programs/*.json`
+
+### Lineage Summary
+
+Best program의 direct parent chain은 5단계로 복원된다.
+
+| Step | Program ID | Iteration | Fitness | Full | Partitioned | Unify | Transitions | Direction |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 0 | `5623f2fc` | 0 | `1.000000` | `0.000%` | `100.000%` | `0.000%` | 0 | all-Partitioned seed |
+| 1 | `26aee537` | 7 | `1.017350` | `1.285%` | `98.715%` | `0.000%` | 0 | shallow levels become Full |
+| 2 | `6832efd9` | 49 | `1.030633` | `1.943%` | `81.919%` | `16.139%` | 12585 | introduce Unify for medium SSTs |
+| 3 | `22113e48` | 109 | `1.206391` | `1.943%` | `14.674%` | `83.383%` | 19710 | major shift to Unify-heavy policy |
+| 4 | `08b10079` | 169 | `1.206468` | `2.018%` | `14.599%` | `83.383%` | 19748 | small Full-rule refinement |
+
+The main jump happened at iteration 109. The policy moved from `81.9%` Partitioned to `83.4%` Unify while keeping Full rare. This suggests that, under the 15-scenario evaluator, reducing metadata footprint through Unify mattered much more than broadly expanding Full.
+
+### Stage-by-Stage Direction
+
+Iteration 0 to 7:
+
+- Started from pure all-Partitioned.
+- LLM introduced a cache-budget-aware policy.
+- Low levels were promoted to Full.
+- Runtime-signal rules for hotness, cache hit rate, scan count, filter rejection, and Unify eligibility appeared.
+- Actual behavior was still almost all Partitioned: `98.7%` Partitioned, `1.3%` Full, `0%` Unify.
+- Fitness rose slightly from `1.0000` to `1.0174`.
+
+Interpretation:
+
+- This was an exploratory step away from the neutral baseline.
+- The first useful signal was not a large behavioral shift, but discovering that a small amount of Full on shallow SSTs was safe.
+
+Iteration 7 to 49:
+
+- Metadata threshold for Full became more permissive: `256000` to `400000`.
+- Full selection thresholds were relaxed.
+- Access-count and point-lookup rules were added.
+- Unify was introduced for medium-size SSTs.
+- Partitioned dropped from `98.7%` to `81.9%`; Unify rose to `16.1%`.
+- Fitness rose from `1.0174` to `1.0306`.
+
+Interpretation:
+
+- This was threshold exploitation around known good candidates.
+- The LLM moved from static/shallow Full toward a mixed policy that allowed Unify to replace some Partitioned choices.
+
+Iteration 49 to 109:
+
+- Scan-heavy Partitioned threshold became stricter: `scan > point_lookup * 1.5` to `scan > point_lookup * 2`.
+- Filter-rejection Partitioned threshold became stricter: `> 0.45` to `> 0.5`.
+- Unify coverage expanded: `num_keys < 600000` to `num_keys < 800000`.
+- A new hotness-based Unify fallback was added: `hot > 0.3`.
+- Partitioned collapsed from `81.9%` to `14.7%`; Unify rose to `83.4%`.
+- Fitness jumped from `1.0306` to `1.2064`.
+
+Interpretation:
+
+- This was the decisive step.
+- The improvement did not come from more Full. Full stayed around `1.9%`.
+- The key move was making Partitioned the exception and Unify the default for a much larger region.
+
+Iteration 109 to 169:
+
+- A new Full rule was added for very high cache residency:
+
+```cpp
+if (s.cache_hit_rate > 0.85 && hot > 0.05 && mf) return SCHEME_FULL;
+```
+
+- Access-count threshold for Full was lowered:
+
+```cpp
+if (s.access_count > 150000 && mf && s.num_keys < 500000) return SCHEME_FULL;
+```
+
+- Full ratio increased slightly from `1.943%` to `2.018%`.
+- Fitness improved only slightly: `1.206391` to `1.206468`.
+
+Interpretation:
+
+- This was local hill-climbing, not a new strategy.
+- The LLM targeted weak high-cache scenarios by allowing a few more cache-resident SSTs to use Full.
+
+### Prompt Context Given to the LLM
+
+Each non-initial lineage step has a stored `prompts.diff_user` object with:
+
+- `system`: short instruction telling the model to improve fitness while preserving diversity.
+- `user`: the main prompt with current program, metrics, prior attempts, top programs, diverse programs, inspiration programs, and exact search/replace instructions.
+- `responses`: previous model response text for the attempted edit.
+
+Approximate prompt sizes:
+
+| Iteration | System chars | User chars | Response chars | Notable prompt content |
+| ---: | ---: | ---: | ---: | --- |
+| 7 | 288 | 29369 | 4306 | baseline program, previous attempts, top programs around `1.0018` |
+| 49 | 288 | 42035 | 4724 | current `1.0174`, top programs around `1.0316`, diverse programs |
+| 109 | 288 | 41202 | 2328 | current `1.0306`, top programs already around `1.2064` |
+| 169 | 288 | 41083 | 2401 | current `1.2064`, many top/diverse programs also around `1.2064` |
+
+The prompt was not only "current code + score." It gave the model a compact local search context:
+
+- current program id, generation, island, and metrics
+- recent failed or weaker attempts
+- top-performing programs and their code
+- diverse programs from the archive
+- inspiration programs selected as high performers
+- exact current code block to replace
+- required search/replace patch format
+
+### What the LLM Appears to Have Used
+
+At iteration 49, the LLM response explicitly compared the current program to better top programs. It identified that the current metadata threshold was too low, Full rules were too restrictive, and Unify selection was too conservative. The resulting edit relaxed thresholds and introduced broader Unify usage.
+
+At iteration 109, the prompt already contained top programs scoring around `1.2064`. The LLM response focused on three differences:
+
+- stricter Partitioned conditions
+- broader Unify fallback
+- adding a hotness-based Unify rule
+
+This explains the large jump: the model was not inventing the final strategy from scratch at that step. It was recombining or copying a successful rule pattern that the prompt exposed through top-performing programs.
+
+At iteration 169, the prompt showed that the current policy was already near the top. The LLM response targeted high-cache scenarios where speedups were relatively smaller, then added a narrow Full rule for cache-resident SSTs. This produced only a small improvement, which is consistent with late-stage exploitation.
+
+### Takeaway for Presentation
+
+The useful story is:
+
+- Early evolution explored non-Partitioned choices.
+- Mid evolution discovered that Unify should cover most SSTs.
+- The decisive improvement came from making Partitioned rare rather than making Full common.
+- Late evolution fine-tuned Full for a small number of hot/cache-resident SSTs.
+- The prompt context matters: OpenEvolve gave the LLM not just metrics, but also top and diverse code examples, so the final policy emerged through guided recombination of previous candidates.
+
+Suggested slide framing:
+
+```text
+all-Partitioned
+  -> small Full on shallow SSTs
+  -> introduce Unify for medium SSTs
+  -> make Unify the dominant default
+  -> fine-tune Full for hot/cache-resident SSTs
+```
+
+This makes the evolution direction easy to explain without showing every C++ threshold.
+
 ## Policy Family Comparison
 
 ### 1. Legacy 1.2852 Reference
